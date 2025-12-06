@@ -12,6 +12,7 @@ function Contacts() {
   const [contacts, setContacts] = useState([]);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tagsLoading, setTagsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('');
@@ -31,11 +32,14 @@ function Contacts() {
   }, [debouncedSearch, selectedTags, selectedStatus]);
 
   const fetchTags = async () => {
+    setTagsLoading(true);
     try {
       const response = await tagsAPI.getAll();
       setTags(response.data);
     } catch (error) {
       console.error('Error fetching tags:', error);
+    } finally {
+      setTagsLoading(false);
     }
   };
 
@@ -114,12 +118,14 @@ function Contacts() {
               placeholder="Search by name, email, phone, or company..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              disabled={loading}
+              className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                disabled={loading}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Clear search"
                 aria-label="Clear search"
               >
@@ -136,7 +142,8 @@ function Contacts() {
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                disabled={loading}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">All Statuses</option>
                 <option value="lead">Lead</option>
@@ -149,23 +156,37 @@ function Contacts() {
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by Tags</label>
               <div className="flex flex-wrap gap-2">
-                {tags.map((tag) => (
-                  <button
-                    key={tag.id}
-                    onClick={() => handleTagFilter(tag.id)}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition ${
-                      selectedTags.includes(tag.id)
-                        ? 'ring-2 ring-offset-2 ring-blue-500'
-                        : 'opacity-60 hover:opacity-100'
-                    }`}
-                    style={{
-                      backgroundColor: tag.color + '20',
-                      color: tag.color,
-                    }}
-                  >
-                    {tag.name}
-                  </button>
-                ))}
+                {tagsLoading ? (
+                  // Skeleton loaders for tags
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse"
+                    />
+                  ))
+                ) : tags.length > 0 ? (
+                  tags.map((tag) => (
+                    <button
+                      key={tag.id}
+                      onClick={() => handleTagFilter(tag.id)}
+                      disabled={loading}
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                        selectedTags.includes(tag.id)
+                          ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-gray-800'
+                          : 'opacity-60 hover:opacity-100'
+                      }`}
+                      style={{
+                        backgroundColor: tag.color + '20',
+                        color: tag.color,
+                      }}
+                      aria-pressed={selectedTags.includes(tag.id)}
+                    >
+                      {tag.name}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No tags available</p>
+                )}
               </div>
             </div>
           </div>
@@ -177,7 +198,8 @@ function Contacts() {
                 setSelectedTags([]);
                 setSelectedStatus('');
               }}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+              disabled={loading}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Clear all filters
             </button>

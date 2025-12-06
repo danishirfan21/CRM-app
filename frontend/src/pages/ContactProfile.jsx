@@ -17,11 +17,6 @@ function ContactProfile() {
   const [noteContent, setNoteContent] = useState('');
   const [notePrivate, setNotePrivate] = useState(true);
 
-  // Debug: log when noteContent changes
-  useEffect(() => {
-    console.log('noteContent changed:', noteContent);
-  }, [noteContent]);
-
   const [interactionType, setInteractionType] = useState('call');
   const [interactionSubject, setInteractionSubject] = useState('');
   const [interactionDescription, setInteractionDescription] = useState('');

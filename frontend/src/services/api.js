@@ -16,10 +16,6 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    // Add timestamp to GET requests to prevent caching
-    if (config.method === 'get') {
-      config.params = { ...config.params, _t: Date.now() };
-    }
     return config;
   },
   (error) => {

@@ -17,6 +17,11 @@ function ContactProfile() {
   const [noteContent, setNoteContent] = useState('');
   const [notePrivate, setNotePrivate] = useState(true);
 
+  // Debug: log when noteContent changes
+  useEffect(() => {
+    console.log('noteContent changed:', noteContent);
+  }, [noteContent]);
+
   const [interactionType, setInteractionType] = useState('call');
   const [interactionSubject, setInteractionSubject] = useState('');
   const [interactionDescription, setInteractionDescription] = useState('');
@@ -31,7 +36,7 @@ function ContactProfile() {
     fetchTags();
     fetchNotes();
     fetchInteractions();
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchContact = async () => {
     try {
@@ -92,7 +97,10 @@ function ContactProfile() {
     if (!window.confirm('Delete this note?')) return;
     try {
       await notesAPI.delete(id, noteId);
-      fetchNotes();
+      // Immediately update UI by filtering out deleted note
+      setNotes(notes.filter(note => note.id !== noteId));
+      // Then fetch fresh data from server
+      await fetchNotes();
     } catch (error) {
       console.error('Error deleting note:', error);
       alert('Failed to delete note');

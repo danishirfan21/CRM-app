@@ -38,32 +38,43 @@ function ContactProfile() {
   const [editForm, setEditForm] = useState({});
 
   useEffect(() => {
-    fetchContact();
-    fetchTags();
-    fetchNotes();
-    fetchInteractions();
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+    let isMounted = true;
+    const abortController = new AbortController();
 
-  const fetchContact = async () => {
-    try {
-      const response = await contactsAPI.getOne(id);
-      setContact(response.data);
-      setEditForm(response.data);
-    } catch (error) {
-      console.error('Error fetching contact:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchData = async () => {
+      try {
+        const [contactRes, tagsRes, notesRes, interactionsRes] = await Promise.all([
+          contactsAPI.getOne(id),
+          tagsAPI.getAll(),
+          notesAPI.getAll(id),
+          interactionsAPI.getAll(id)
+        ]);
+        
+        if (isMounted) {
+          setContact(contactRes.data);
+          setEditForm(contactRes.data);
+          setTags(tagsRes.data);
+          setNotes(notesRes.data);
+          setInteractions(interactionsRes.data);
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error('Error fetching data:', error);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
 
-  const fetchTags = async () => {
-    try {
-      const response = await tagsAPI.getAll();
-      setTags(response.data);
-    } catch (error) {
-      console.error('Error fetching tags:', error);
-    }
-  };
+    fetchData();
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [id]);
 
   const fetchNotes = async () => {
     try {
@@ -86,18 +97,38 @@ function ContactProfile() {
   const handleAddNote = async (e) => {
     e.preventDefault();
     setAddingNote(true);
+    
+    // Optimistic update
+    const tempNote = {
+      id: `temp-${Date.now()}`,
+      content: noteContent,
+      is_private: notePrivate,
+      user: user,
+      created_at: new Date().toISOString(),
+    };
+    
+    setNotes(prev => [tempNote, ...prev]);
+    const previousContent = noteContent;
+    setNoteContent('');
+    setNotePrivate(true);
+    
     try {
       const response = await notesAPI.create(id, {
-        content: noteContent,
-        is_private: notePrivate,
+        content: previousContent,
+        is_private: tempNote.is_private,
       });
       success(response.data.message || 'Note added successfully!');
-      setNoteContent('');
-      setNotePrivate(true);
-      fetchNotes();
+      
+      // Replace temp note with real note
+      setNotes(prev => prev.map(n => 
+        n.id === tempNote.id ? response.data.note || response.data : n
+      ));
     } catch (error) {
       console.error('Error adding note:', error);
       showError('Failed to add note. Please try again.');
+      // Rollback on error
+      setNotes(prev => prev.filter(n => n.id !== tempNote.id));
+      setNoteContent(previousContent);
     } finally {
       setAddingNote(false);
     }
@@ -128,23 +159,53 @@ function ContactProfile() {
   const handleAddInteraction = async (e) => {
     e.preventDefault();
     setAddingInteraction(true);
+    
+    // Optimistic update
+    const tempInteraction = {
+      id: `temp-${Date.now()}`,
+      type: interactionType,
+      subject: interactionSubject,
+      description: interactionDescription,
+      interaction_date: interactionDate,
+      duration_minutes: interactionDuration ? parseInt(interactionDuration) : null,
+      user: user,
+      created_at: new Date().toISOString(),
+    };
+    
+    setInteractions(prev => [tempInteraction, ...prev]);
+    const previousData = {
+      subject: interactionSubject,
+      description: interactionDescription,
+      duration: interactionDuration,
+    };
+    
+    setInteractionSubject('');
+    setInteractionDescription('');
+    setInteractionDuration('');
+    setInteractionDate(new Date().toISOString().slice(0, 16));
+    
     try {
       const response = await interactionsAPI.create(id, {
         type: interactionType,
-        subject: interactionSubject,
-        description: interactionDescription,
-        interaction_date: interactionDate,
-        duration_minutes: interactionDuration ? parseInt(interactionDuration) : null,
+        subject: previousData.subject,
+        description: previousData.description,
+        interaction_date: tempInteraction.interaction_date,
+        duration_minutes: tempInteraction.duration_minutes,
       });
       success(response.data.message || 'Interaction logged successfully!');
-      setInteractionSubject('');
-      setInteractionDescription('');
-      setInteractionDuration('');
-      setInteractionDate(new Date().toISOString().slice(0, 16));
-      fetchInteractions();
+      
+      // Replace temp interaction with real one
+      setInteractions(prev => prev.map(i => 
+        i.id === tempInteraction.id ? response.data.interaction || response.data : i
+      ));
     } catch (error) {
       console.error('Error adding interaction:', error);
       showError('Failed to add interaction. Please try again.');
+      // Rollback on error
+      setInteractions(prev => prev.filter(i => i.id !== tempInteraction.id));
+      setInteractionSubject(previousData.subject);
+      setInteractionDescription(previousData.description);
+      setInteractionDuration(previousData.duration);
     } finally {
       setAddingInteraction(false);
     }
@@ -161,24 +222,48 @@ function ContactProfile() {
 
     if (!confirmed) return;
 
+    // Store for potential rollback
+    const interaction = interactions.find(i => i.id === interactionId);
+    
+    // Optimistic update
+    setInteractions(prev => prev.filter(i => i.id !== interactionId));
+
     try {
       const response = await interactionsAPI.delete(id, interactionId);
       success(response.data.message || 'Interaction deleted successfully!');
-      fetchInteractions();
     } catch (error) {
       console.error('Error deleting interaction:', error);
       showError('Failed to delete interaction. Please try again.');
+      // Rollback on error
+      if (interaction) {
+        setInteractions(prev => [...prev, interaction].sort((a, b) => 
+          new Date(b.interaction_date) - new Date(a.interaction_date)
+        ));
+      }
     }
   };
 
   const handleAttachTag = async (tagId) => {
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+    
+    // Optimistic update
+    setContact(prev => ({
+      ...prev,
+      tags: [...(prev.tags || []), tag]
+    }));
+    
     try {
       const response = await contactsAPI.attachTag(id, tagId);
       success(response.data.message || 'Tag attached successfully!');
-      fetchContact();
     } catch (error) {
       console.error('Error attaching tag:', error);
       showError('Failed to attach tag. Please try again.');
+      // Rollback on error
+      setContact(prev => ({
+        ...prev,
+        tags: prev.tags.filter(t => t.id !== tagId)
+      }));
     }
   };
 
@@ -193,13 +278,28 @@ function ContactProfile() {
 
     if (!confirmed) return;
 
+    // Store tag for potential rollback
+    const tag = contact.tags?.find(t => t.id === tagId);
+    
+    // Optimistic update
+    setContact(prev => ({
+      ...prev,
+      tags: prev.tags.filter(t => t.id !== tagId)
+    }));
+
     try {
       const response = await contactsAPI.detachTag(id, tagId);
       success(response.data.message || 'Tag removed successfully!');
-      fetchContact();
     } catch (error) {
       console.error('Error detaching tag:', error);
       showError('Failed to remove tag. Please try again.');
+      // Rollback on error
+      if (tag) {
+        setContact(prev => ({
+          ...prev,
+          tags: [...(prev.tags || []), tag]
+        }));
+      }
     }
   };
 
@@ -443,7 +543,9 @@ function ContactProfile() {
             <button
               onClick={() => setActiveTab('overview')}
               role="tab"
+              id="overview-tab"
               aria-selected={activeTab === 'overview'}
+              aria-controls="overview-panel"
               className={`px-6 py-4 text-sm font-medium border-b-2 transition min-h-[44px] touch-manipulation ${
                 activeTab === 'overview'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -455,7 +557,9 @@ function ContactProfile() {
             <button
               onClick={() => setActiveTab('notes')}
               role="tab"
+              id="notes-tab"
               aria-selected={activeTab === 'notes'}
+              aria-controls="notes-panel"
               className={`px-6 py-4 text-sm font-medium border-b-2 transition min-h-[44px] touch-manipulation ${
                 activeTab === 'notes'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -467,7 +571,9 @@ function ContactProfile() {
             <button
               onClick={() => setActiveTab('interactions')}
               role="tab"
+              id="interactions-tab"
               aria-selected={activeTab === 'interactions'}
+              aria-controls="interactions-panel"
               className={`px-6 py-4 text-sm font-medium border-b-2 transition min-h-[44px] touch-manipulation ${
                 activeTab === 'interactions'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -481,7 +587,7 @@ function ContactProfile() {
 
         <div className="p-6">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-6" role="tabpanel" id="overview-panel" aria-labelledby="overview-tab">
               <div>
                 <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Recent Activity</h3>
                 {interactions.slice(0, 3).length > 0 ? (
@@ -531,7 +637,7 @@ function ContactProfile() {
           )}
 
           {activeTab === 'notes' && (
-            <div className="space-y-6">
+            <div className="space-y-6" role="tabpanel" id="notes-panel" aria-labelledby="notes-tab">
               <form onSubmit={handleAddNote} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4" aria-label="Add note form">
                 <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Add Note</h3>
                 <textarea
@@ -599,7 +705,7 @@ function ContactProfile() {
           )}
 
           {activeTab === 'interactions' && (
-            <div className="space-y-6">
+            <div className="space-y-6" role="tabpanel" id="interactions-panel" aria-labelledby="interactions-tab">
               <form onSubmit={handleAddInteraction} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4" aria-label="Log interaction form">
                 <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Log Interaction</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

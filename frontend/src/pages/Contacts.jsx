@@ -28,7 +28,40 @@ function Contacts() {
   }, []);
 
   useEffect(() => {
+    let isLatest = true;
+    const abortController = new AbortController();
+
+    const fetchContacts = async () => {
+      setLoading(true);
+      try {
+        const params = {
+          search: debouncedSearch,
+          tags: selectedTags,
+          status: selectedStatus,
+        };
+        const response = await contactsAPI.getAll(params);
+        
+        // Only update if this is still the latest request
+        if (isLatest) {
+          setContacts(response.data.data || response.data);
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error('Error fetching contacts:', error);
+        }
+      } finally {
+        if (isLatest) {
+          setLoading(false);
+        }
+      }
+    };
+
     fetchContacts();
+
+    return () => {
+      isLatest = false;
+      abortController.abort();
+    };
   }, [debouncedSearch, selectedTags, selectedStatus]);
 
   const fetchTags = async () => {
@@ -43,7 +76,7 @@ function Contacts() {
     }
   };
 
-  const fetchContacts = async () => {
+  const refetchContacts = async () => {
     setLoading(true);
     try {
       const params = {
@@ -77,13 +110,22 @@ function Contacts() {
 
     if (!confirmed) return;
 
+    // Store contact for potential rollback
+    const contactToDelete = contacts.find(c => c.id === id);
+    
+    // Optimistic update
+    setContacts(prev => prev.filter(c => c.id !== id));
+
     try {
       const response = await contactsAPI.delete(id);
       success(response.data.message || 'Contact deleted successfully!');
-      fetchContacts();
     } catch (error) {
       console.error('Error deleting contact:', error);
       showError('Failed to delete contact. Please try again.');
+      // Rollback on error
+      if (contactToDelete) {
+        setContacts(prev => [...prev, contactToDelete]);
+      }
     }
   };
 

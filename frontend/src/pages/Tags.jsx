@@ -2,14 +2,21 @@ import { useState, useEffect } from 'react';
 import { tagsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../components/ConfirmDialog';
+import { EmptyTags } from '../components/EmptyState';
+import { TableSkeleton } from '../components/SkeletonLoader';
 
 function Tags() {
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingTag, setEditingTag] = useState(null);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
+  const { success, error: showError } = useToast();
+  const { confirm } = useConfirm();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -38,21 +45,26 @@ function Tags() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
 
     try {
+      let response;
       if (editingTag) {
-        await tagsAPI.update(editingTag.id, formData);
+        response = await tagsAPI.update(editingTag.id, formData);
       } else {
-        await tagsAPI.create(formData);
+        response = await tagsAPI.create(formData);
       }
 
+      success(response.data.message || `Tag ${editingTag ? 'updated' : 'created'} successfully!`);
       setFormData({ name: '', color: '#3B82F6', description: '' });
       setShowForm(false);
       setEditingTag(null);
       fetchTags();
     } catch (error) {
       console.error('Error saving tag:', error);
-      alert(error.response?.data?.message || 'Failed to save tag');
+      showError(error.response?.data?.message || 'Failed to save tag');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -67,14 +79,23 @@ function Tags() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this tag?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Tag',
+      message: 'Are you sure you want to delete this tag? It will be removed from all contacts.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
 
     try {
-      await tagsAPI.delete(id);
+      const response = await tagsAPI.delete(id);
+      success(response.data.message || 'Tag deleted successfully!');
       fetchTags();
     } catch (error) {
       console.error('Error deleting tag:', error);
-      alert('Failed to delete tag');
+      showError('Failed to delete tag. Please try again.');
     }
   };
 
@@ -97,16 +118,19 @@ function Tags() {
 
   if (loading) {
     return (
-      <div className="text-center py-12">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">Tag Management</h1>
+        </div>
+        <TableSkeleton rows={5} columns={4} />
       </div>
     );
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Tag Management</h1>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">Tag Management</h1>
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
@@ -180,14 +204,16 @@ function Tags() {
             <div className="flex gap-4">
               <button
                 type="submit"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                disabled={submitting}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {editingTag ? 'Update Tag' : 'Create Tag'}
+                {submitting ? 'Saving...' : (editingTag ? 'Update Tag' : 'Create Tag')}
               </button>
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                disabled={submitting}
+                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -196,75 +222,86 @@ function Tags() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Tag
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Description
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Contacts
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
+      {tags.length === 0 && !showForm ? (
+        <EmptyTags onCreateTag={() => setShowForm(true)} />
+      ) : tags.length > 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
+              <tr>
+                <th 
+                  scope="col" 
+                  className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Tag
+                </th>
+                <th 
+                  scope="col" 
+                  className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Description
+                </th>
+                <th 
+                  scope="col" 
+                  className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Contacts
+                </th>
+                <th 
+                  scope="col" 
+                  className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Actions
+                </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {tags.length === 0 ? (
-              <tr>
-                <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
-                  No tags created yet
-                </td>
-              </tr>
-            ) : (
-              tags.map((tag) => (
-                <tr key={tag.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            {tags.map((tag) => (
+              <tr key={tag.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                  <span
+                    className="px-3 py-1 rounded-full text-sm font-medium inline-flex items-center gap-2"
+                    style={{
+                      backgroundColor: tag.color + '20',
+                      color: tag.color,
+                    }}
+                  >
                     <span
-                      className="px-3 py-1 rounded-full text-sm font-medium inline-flex items-center gap-2"
-                      style={{
-                        backgroundColor: tag.color + '20',
-                        color: tag.color,
-                      }}
-                    >
-                      <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      {tag.name}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {tag.description || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {tag.contacts_count || 0} contacts
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: tag.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate max-w-[150px]">{tag.name}</span>
+                  </span>
+                </td>
+                <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                  {tag.description || '-'}
+                </td>
+                <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                  {tag.contacts_count || 0} contacts
+                </td>
+                <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <button
                       onClick={() => handleEdit(tag)}
-                      className="text-blue-600 hover:text-blue-700 mr-4"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 mr-2 sm:mr-4 touch-manipulation min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                      aria-label={`Edit ${tag.name} tag`}
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(tag.id)}
-                      className="text-red-600 hover:text-red-700"
+                      className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 touch-manipulation min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                      aria-label={`Delete ${tag.name} tag`}
                     >
                       Delete
                     </button>
                   </td>
                 </tr>
-              ))
-            )}
+              ))}
           </tbody>
         </table>
       </div>
+      ) : null}
     </div>
   );
 }

@@ -12,9 +12,19 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'name' => 'required|string|max:255|min:2',
+            'email' => 'required|string|email:rfc,dns|max:255|unique:users',
+            'password' => 'required|string|min:8|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/',
+        ], [
+            'name.required' => 'Name is required.',
+            'name.min' => 'Name must be at least 2 characters.',
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'This email address is already registered.',
+            'password.required' => 'Password is required.',
+            'password.min' => 'Password must be at least 8 characters.',
+            'password.confirmed' => 'Password confirmation does not match.',
+            'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
         ]);
 
         $user = User::create([
@@ -30,6 +40,7 @@ class AuthController extends Controller
             'user' => $user,
             'token' => $token,
             'token_type' => 'Bearer',
+            'message' => 'Registration successful! Welcome to CRM Pro.',
         ], 201);
     }
 
@@ -37,7 +48,11 @@ class AuthController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
-            'password' => 'required',
+            'password' => 'required|string',
+        ], [
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'password.required' => 'Password is required.',
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -54,6 +69,7 @@ class AuthController extends Controller
             'user' => $user,
             'token' => $token,
             'token_type' => 'Bearer',
+            'message' => 'Login successful! Welcome back.',
         ]);
     }
 

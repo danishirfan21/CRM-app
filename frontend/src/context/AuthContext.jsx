@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(user));
     setUser(user);
 
-    return user;
+    return response.data;
   };
 
   const register = async (name, email, password, password_confirmation) => {
@@ -36,7 +36,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(user));
     setUser(user);
 
-    return user;
+    return response.data;
   };
 
   const logout = async () => {

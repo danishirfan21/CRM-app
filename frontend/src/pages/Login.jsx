@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -9,6 +10,7 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { success, error: showError } = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,25 +18,28 @@ function Login() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      const response = await login(email, password);
+      success(response.message || 'Login successful!');
       navigate('/contacts');
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid credentials');
+      const errorMsg = err.response?.data?.message || 'Invalid credentials';
+      setError(errorMsg);
+      showError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">CRM Pro</h1>
-          <p className="text-gray-600 mt-2">Sign in to your account</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">CRM Pro</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">Sign in to your account</p>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-4" role="alert">
             {error}
           </div>
         )}

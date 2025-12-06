@@ -20,8 +20,11 @@ class NoteController extends Controller
     public function store(Request $request, $contactId)
     {
         $validated = $request->validate([
-            'content' => 'required|string',
+            'content' => 'required|string|max:5000',
             'is_private' => 'boolean',
+        ], [
+            'content.required' => 'Note content is required.',
+            'content.max' => 'Note content cannot exceed 5000 characters.',
         ]);
 
         $note = Note::create([
@@ -32,7 +35,10 @@ class NoteController extends Controller
         ]);
 
         $note->load('user');
-        return response()->json($note, 201);
+        return response()->json([
+            'note' => $note,
+            'message' => 'Note added successfully!',
+        ], 201);
     }
 
     public function update(Request $request, $contactId, $id)
@@ -44,14 +50,19 @@ class NoteController extends Controller
         }
 
         $validated = $request->validate([
-            'content' => 'sometimes|required|string',
+            'content' => 'sometimes|required|string|max:5000',
             'is_private' => 'sometimes|boolean',
+        ], [
+            'content.max' => 'Note content cannot exceed 5000 characters.',
         ]);
 
         $note->update($validated);
         $note->load('user');
 
-        return response()->json($note);
+        return response()->json([
+            'note' => $note,
+            'message' => 'Note updated successfully!',
+        ]);
     }
 
     public function destroy(Request $request, $contactId, $id)

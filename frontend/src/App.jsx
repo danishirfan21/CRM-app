@@ -1,5 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { ConfirmProvider } from './components/ConfirmDialog';
+import ToastContainer from './components/Toast';
 import PrivateRoute from './components/PrivateRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -11,11 +15,15 @@ import Tags from './pages/Tags';
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <ConfirmProvider>
+            <BrowserRouter>
+              <ToastContainer />
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
 
           <Route
             path="/contacts"
@@ -62,9 +70,12 @@ function App() {
           />
 
           <Route path="/" element={<Navigate to="/contacts" replace />} />
-        </Routes>
-      </BrowserRouter>
+            </Routes>
+          </BrowserRouter>
+        </ConfirmProvider>
+      </ToastProvider>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
 

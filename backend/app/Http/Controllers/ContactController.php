@@ -47,24 +47,36 @@ class ContactController extends Controller
         }
 
         $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|unique:contacts,email',
-            'phone' => 'nullable|string|max:20',
+            'first_name' => 'required|string|max:255|min:2',
+            'last_name' => 'required|string|max:255|min:2',
+            'email' => 'required|email:rfc,dns|unique:contacts,email',
+            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)]+$/',
             'company' => 'nullable|string|max:255',
             'position' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
+            'address' => 'nullable|string|max:500',
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
             'zip_code' => 'nullable|string|max:20',
             'country' => 'nullable|string|max:100',
             'status' => 'nullable|in:active,inactive,lead,customer',
+        ], [
+            'first_name.required' => 'First name is required.',
+            'first_name.min' => 'First name must be at least 2 characters.',
+            'last_name.required' => 'Last name is required.',
+            'last_name.min' => 'Last name must be at least 2 characters.',
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'This email address is already in use.',
+            'phone.regex' => 'Please provide a valid phone number.',
         ]);
 
         $contact = Contact::create($validated);
         $contact->load(['tags', 'notes', 'interactions']);
 
-        return response()->json($contact, 201);
+        return response()->json([
+            'contact' => $contact,
+            'message' => 'Contact created successfully!',
+        ], 201);
     }
 
     public function show($id)
@@ -82,24 +94,33 @@ class ContactController extends Controller
         $contact = Contact::findOrFail($id);
 
         $validated = $request->validate([
-            'first_name' => 'sometimes|required|string|max:255',
-            'last_name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email|unique:contacts,email,' . $id,
-            'phone' => 'nullable|string|max:20',
+            'first_name' => 'sometimes|required|string|max:255|min:2',
+            'last_name' => 'sometimes|required|string|max:255|min:2',
+            'email' => 'sometimes|required|email:rfc,dns|unique:contacts,email,' . $id,
+            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)]+$/',
             'company' => 'nullable|string|max:255',
             'position' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
+            'address' => 'nullable|string|max:500',
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
             'zip_code' => 'nullable|string|max:20',
             'country' => 'nullable|string|max:100',
             'status' => 'nullable|in:active,inactive,lead,customer',
+        ], [
+            'first_name.min' => 'First name must be at least 2 characters.',
+            'last_name.min' => 'Last name must be at least 2 characters.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'This email address is already in use.',
+            'phone.regex' => 'Please provide a valid phone number.',
         ]);
 
         $contact->update($validated);
         $contact->load(['tags', 'notes', 'interactions']);
 
-        return response()->json($contact);
+        return response()->json([
+            'contact' => $contact,
+            'message' => 'Contact updated successfully!',
+        ]);
     }
 
     public function destroy(Request $request, $id)
@@ -131,7 +152,10 @@ class ContactController extends Controller
         }
 
         $contact->load('tags');
-        return response()->json($contact);
+        return response()->json([
+            'contact' => $contact,
+            'message' => 'Tag attached successfully!',
+        ]);
     }
 
     public function detachTag(Request $request, $id, $tagId)
@@ -144,6 +168,9 @@ class ContactController extends Controller
         $contact->tags()->detach($tagId);
         $contact->load('tags');
 
-        return response()->json($contact);
+        return response()->json([
+            'contact' => $contact,
+            'message' => 'Tag removed successfully!',
+        ]);
     }
 }

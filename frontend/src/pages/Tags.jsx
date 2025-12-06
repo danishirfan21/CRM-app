@@ -134,7 +134,8 @@ function Tags() {
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium min-h-[44px] touch-manipulation"
+            aria-label="Create new tag"
           >
             + Create Tag
           </button>
@@ -142,14 +143,14 @@ function Tags() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4 dark:text-gray-100">
             {editingTag ? 'Edit Tag' : 'Create New Tag'}
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" aria-label="Tag form">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Tag Name *
               </label>
               <input
@@ -157,13 +158,13 @@ function Tags() {
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 placeholder="e.g., VIP, Hot Lead, Partner"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Color *
               </label>
               <div className="flex items-center gap-4">
@@ -171,7 +172,7 @@ function Tags() {
                   type="color"
                   value={formData.color}
                   onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                  className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
+                  className="h-10 w-20 border border-gray-300 dark:border-gray-600 rounded cursor-pointer"
                 />
                 <div className="flex gap-2">
                   {colorPresets.map((color) => (
@@ -179,9 +180,10 @@ function Tags() {
                       key={color}
                       type="button"
                       onClick={() => setFormData({ ...formData, color })}
-                      className="w-8 h-8 rounded border-2 border-gray-300 hover:border-gray-400 transition"
+                      className="w-8 h-8 rounded border-2 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition"
                       style={{ backgroundColor: color }}
                       title={color}
+                      aria-label={`Select color ${color}`}
                     />
                   ))}
                 </div>
@@ -189,13 +191,13 @@ function Tags() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description
               </label>
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 rows="3"
                 placeholder="Optional description for this tag"
               />
@@ -205,7 +207,7 @@ function Tags() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
               >
                 {submitting ? 'Saving...' : (editingTag ? 'Update Tag' : 'Create Tag')}
               </button>
@@ -213,7 +215,7 @@ function Tags() {
                 type="button"
                 onClick={handleCancel}
                 disabled={submitting}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
               >
                 Cancel
               </button>

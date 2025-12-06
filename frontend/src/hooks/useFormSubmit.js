@@ -10,7 +10,7 @@ import { useToast } from '../context/ToastContext';
 export const useFormSubmit = (submitFn, options = {}) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { success, error: showErrorToast } = useToast();
+  const { success, error: showErrorToastFn } = useToast();
 
   const {
     successMessage = 'Operation successful!',
@@ -43,7 +43,7 @@ export const useFormSubmit = (submitFn, options = {}) => {
       setError(errorMsg);
 
       if (showErrorToast) {
-        showErrorToast(errorMsg);
+        showErrorToastFn(errorMsg);
       }
 
       if (onError) {

@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useDebounce } from '../hooks/useDebounce';
-import { useContacts, useDeleteContact } from '../hooks/useQueries';
+import { useContacts, useDeleteContact, useTags } from '../hooks/useQueries';
 import { EmptyContacts, EmptySearchResults } from '../components/EmptyState';
 import { ContactGridSkeleton } from '../components/SkeletonLoader';
-import { useTags } from '../hooks/useQueries';
+
+// Threshold for client-side vs server-side filtering
+const CLIENT_SIDE_FILTER_THRESHOLD = 100;
 
 function Contacts() {
   const [search, setSearch] = useState('');
@@ -18,19 +20,58 @@ function Contacts() {
 
   const debouncedSearch = useDebounce(search, 500);
 
-  // Use React Query hooks
-  const params = useMemo(
-    () => ({
-      search: debouncedSearch,
-      tags: selectedTags,
-      status: selectedStatus,
-    }),
-    [debouncedSearch, selectedTags, selectedStatus]
-  );
+  // Fetch ALL contacts (without filters) for client-side filtering
+  const { data: allContacts = [], isLoading, isRefetching } = useContacts({});
 
-  const { data: contacts = [], isLoading, isRefetching } = useContacts(params);
   const { data: tags = [], isLoading: tagsLoading } = useTags();
   const deleteContactMutation = useDeleteContact();
+
+  // Determine whether to use client-side or server-side filtering
+  const useClientSideFiltering =
+    allContacts.length <= CLIENT_SIDE_FILTER_THRESHOLD;
+
+  // Client-side filtering
+  const filteredContacts = useMemo(() => {
+    if (!useClientSideFiltering) {
+      // For large datasets, we'd use server-side filtering
+      // This would require a different query with filters
+      return allContacts;
+    }
+
+    let result = [...allContacts];
+
+    // Filter by search
+    if (debouncedSearch) {
+      const searchLower = debouncedSearch.toLowerCase();
+      result = result.filter(
+        (contact) =>
+          contact.full_name?.toLowerCase().includes(searchLower) ||
+          contact.email?.toLowerCase().includes(searchLower) ||
+          contact.phone?.toLowerCase().includes(searchLower) ||
+          contact.company?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Filter by tags
+    if (selectedTags.length > 0) {
+      result = result.filter((contact) =>
+        contact.tags?.some((tag) => selectedTags.includes(tag.id))
+      );
+    }
+
+    // Filter by status
+    if (selectedStatus) {
+      result = result.filter((contact) => contact.status === selectedStatus);
+    }
+
+    return result;
+  }, [
+    allContacts,
+    debouncedSearch,
+    selectedTags,
+    selectedStatus,
+    useClientSideFiltering,
+  ]);
 
   const handleTagFilter = (tagId) => {
     setSelectedTags((prev) =>
@@ -62,6 +103,9 @@ function Contacts() {
 
   const hasFilters = search || selectedTags.length > 0 || selectedStatus;
 
+  // Use filteredContacts for display
+  const contacts = filteredContacts;
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -71,7 +115,7 @@ function Contacts() {
           </h1>
           {!isLoading && contacts.length > 0 && (
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Showing {contacts.length}{' '}
+              Showing {contacts.length} of {allContacts.length}{' '}
               {contacts.length === 1 ? 'contact' : 'contacts'}
               {hasFilters && ' (filtered)'}
             </p>
@@ -187,18 +231,25 @@ function Contacts() {
           </div>
 
           {hasFilters && (
-            <button
-              onClick={clearFilters}
-              disabled={isLoading && !isRefetching}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Clear all filters
-            </button>
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={clearFilters}
+                disabled={isLoading && !isRefetching}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear all filters
+              </button>
+              {useClientSideFiltering && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  ⚡ Instant filtering
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Contacts Grid */}
+      {/* Contacts Grid - Improved layout with max 2 columns on xl screens */}
       <div
         className={
           isRefetching && !isLoading ? 'opacity-50 pointer-events-none' : ''
@@ -216,105 +267,113 @@ function Contacts() {
             />
           )
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {contacts.map((contact) => (
-              <div
-                key={contact.id}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md dark:hover:shadow-lg transition p-4 sm:p-6"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1 min-w-0">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              {contacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md dark:hover:shadow-lg transition p-4 sm:p-6"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1 min-w-0">
+                      <Link
+                        to={`/contacts/${contact.id}`}
+                        className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 block truncate"
+                      >
+                        {contact.full_name}
+                      </Link>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                        {contact.position}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-500 truncate">
+                        {contact.company}
+                      </p>
+                    </div>
+                    <span
+                      className="px-2 py-1 text-xs rounded-full font-medium flex-shrink-0 ml-2 capitalize"
+                      style={{
+                        backgroundColor:
+                          contact.status === 'customer'
+                            ? '#10B98120'
+                            : contact.status === 'lead'
+                            ? '#3B82F620'
+                            : '#6B728020',
+                        color:
+                          contact.status === 'customer'
+                            ? '#10B981'
+                            : contact.status === 'lead'
+                            ? '#3B82F6'
+                            : '#6B7280',
+                      }}
+                    >
+                      {contact.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 mb-4 text-sm">
+                    <p className="text-gray-600 dark:text-gray-400 truncate">
+                      <span className="font-medium">Email:</span>{' '}
+                      {contact.email}
+                    </p>
+                    {contact.phone && (
+                      <p className="text-gray-600 dark:text-gray-400">
+                        <span className="font-medium">Phone:</span>{' '}
+                        {contact.phone}
+                      </p>
+                    )}
+                  </div>
+
+                  {contact.tags && contact.tags.length > 0 && (
+                    <div
+                      className="flex flex-wrap gap-2 mb-4"
+                      role="list"
+                      aria-label="Contact tags"
+                    >
+                      {contact.tags.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag.id}
+                          role="listitem"
+                          className="px-2 py-1 rounded-full text-xs font-medium"
+                          style={{
+                            backgroundColor: tag.color + '20',
+                            color: tag.color,
+                          }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                      {contact.tags.length > 3 && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                          +{contact.tags.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
                     <Link
                       to={`/contacts/${contact.id}`}
-                      className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 block truncate"
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium min-h-[44px] flex items-center touch-manipulation"
+                      aria-label={`View details for ${contact.full_name}`}
                     >
-                      {contact.full_name}
+                      View Details
                     </Link>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                      {contact.position}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-500 truncate">
-                      {contact.company}
-                    </p>
-                  </div>
-                  <span
-                    className="px-2 py-1 text-xs rounded-full font-medium flex-shrink-0 ml-2 capitalize"
-                    style={{
-                      backgroundColor:
-                        contact.status === 'customer'
-                          ? '#10B98120'
-                          : contact.status === 'lead'
-                          ? '#3B82F620'
-                          : '#6B728020',
-                      color:
-                        contact.status === 'customer'
-                          ? '#10B981'
-                          : contact.status === 'lead'
-                          ? '#3B82F6'
-                          : '#6B7280',
-                    }}
-                  >
-                    {contact.status}
-                  </span>
-                </div>
-
-                <div className="space-y-2 mb-4 text-sm">
-                  <p className="text-gray-600 dark:text-gray-400 truncate">
-                    <span className="font-medium">Email:</span> {contact.email}
-                  </p>
-                  {contact.phone && (
-                    <p className="text-gray-600 dark:text-gray-400">
-                      <span className="font-medium">Phone:</span>{' '}
-                      {contact.phone}
-                    </p>
-                  )}
-                </div>
-
-                {contact.tags && contact.tags.length > 0 && (
-                  <div
-                    className="flex flex-wrap gap-2 mb-4"
-                    role="list"
-                    aria-label="Contact tags"
-                  >
-                    {contact.tags.map((tag) => (
-                      <span
-                        key={tag.id}
-                        role="listitem"
-                        className="px-2 py-1 rounded-full text-xs font-medium"
-                        style={{
-                          backgroundColor: tag.color + '20',
-                          color: tag.color,
-                        }}
+                    {isAdmin() && (
+                      <button
+                        onClick={() =>
+                          handleDeleteContact(contact.id, contact.full_name)
+                        }
+                        disabled={deleteContactMutation.isLoading}
+                        className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+                        aria-label={`Delete ${contact.full_name}`}
                       >
-                        {tag.name}
-                      </span>
-                    ))}
+                        Delete
+                      </button>
+                    )}
                   </div>
-                )}
-
-                <div className="flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <Link
-                    to={`/contacts/${contact.id}`}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium min-h-[44px] flex items-center touch-manipulation"
-                    aria-label={`View details for ${contact.full_name}`}
-                  >
-                    View Details
-                  </Link>
-                  {isAdmin() && (
-                    <button
-                      onClick={() =>
-                        handleDeleteContact(contact.id, contact.full_name)
-                      }
-                      disabled={deleteContactMutation.isLoading}
-                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-                      aria-label={`Delete ${contact.full_name}`}
-                    >
-                      Delete
-                    </button>
-                  )}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -1,143 +1,95 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { contactsAPI, tagsAPI, notesAPI, interactionsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ConfirmDialog';
 import { EmptyNotes, EmptyInteractions } from '../components/EmptyState';
 import { ProfileSkeleton, ListSkeleton } from '../components/SkeletonLoader';
+import {
+  useContact,
+  useTags,
+  useNotes,
+  useInteractions,
+  useUpdateContact,
+  useAttachTag,
+  useDetachTag,
+  useCreateNote,
+  useDeleteNote,
+  useCreateInteraction,
+  useDeleteInteraction,
+} from '../hooks/useQueries';
 
 function ContactProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const { success, error: showError } = useToast();
   const { confirm } = useConfirm();
-  
-  const [contact, setContact] = useState(null);
-  const [tags, setTags] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [interactions, setInteractions] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // React Query hooks - replaces all manual state management
+  const { data: contact, isLoading: contactLoading } = useContact(id);
+  const { data: tags = [], isLoading: tagsLoading } = useTags();
+  const { data: notes = [], isLoading: notesLoading } = useNotes(id);
+  const { data: interactions = [], isLoading: interactionsLoading } =
+    useInteractions(id);
+
+  // Mutations
+  const updateContactMutation = useUpdateContact(id);
+  const attachTagMutation = useAttachTag(id);
+  const detachTagMutation = useDetachTag(id);
+  const createNoteMutation = useCreateNote(id);
+  const deleteNoteMutation = useDeleteNote(id);
+  const createInteractionMutation = useCreateInteraction(id);
+  const deleteInteractionMutation = useDeleteInteraction(id);
+
+  // Local UI state only
   const [activeTab, setActiveTab] = useState('overview');
-  
-  const [addingNote, setAddingNote] = useState(false);
-  const [addingInteraction, setAddingInteraction] = useState(false);
-  const [updatingContact, setUpdatingContact] = useState(false);
-
-  const [noteContent, setNoteContent] = useState('');
-  const [notePrivate, setNotePrivate] = useState(true);
-
-  const [interactionType, setInteractionType] = useState('call');
-  const [interactionSubject, setInteractionSubject] = useState('');
-  const [interactionDescription, setInteractionDescription] = useState('');
-  const [interactionDate, setInteractionDate] = useState(new Date().toISOString().slice(0, 16));
-  const [interactionDuration, setInteractionDuration] = useState('');
-
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
 
-  useEffect(() => {
-    let isMounted = true;
-    const abortController = new AbortController();
+  // Note form state
+  const [noteContent, setNoteContent] = useState('');
+  const [notePrivate, setNotePrivate] = useState(true);
 
-    const fetchData = async () => {
-      try {
-        const [contactRes, tagsRes, notesRes, interactionsRes] = await Promise.all([
-          contactsAPI.getOne(id),
-          tagsAPI.getAll(),
-          notesAPI.getAll(id),
-          interactionsAPI.getAll(id)
-        ]);
-        
-        if (isMounted) {
-          setContact(contactRes.data);
-          setEditForm(contactRes.data);
-          setTags(tagsRes.data);
-          setNotes(notesRes.data);
-          setInteractions(interactionsRes.data);
-        }
-      } catch (error) {
-        if (!abortController.signal.aborted) {
-          console.error('Error fetching data:', error);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
+  // Interaction form state
+  const [interactionType, setInteractionType] = useState('call');
+  const [interactionSubject, setInteractionSubject] = useState('');
+  const [interactionDescription, setInteractionDescription] = useState('');
+  const [interactionDate, setInteractionDate] = useState(
+    new Date().toISOString().slice(0, 16)
+  );
+  const [interactionDuration, setInteractionDuration] = useState('');
 
-    fetchData();
+  // Combined loading state
+  const loading =
+    contactLoading || tagsLoading || notesLoading || interactionsLoading;
 
-    return () => {
-      isMounted = false;
-      abortController.abort();
-    };
-  }, [id]);
-
-  const fetchNotes = async () => {
-    try {
-      const response = await notesAPI.getAll(id);
-      setNotes(response.data);
-    } catch (error) {
-      console.error('Error fetching notes:', error);
+  // Initialize edit form when contact data loads
+  useState(() => {
+    if (contact && !isEditing) {
+      setEditForm(contact);
     }
-  };
-
-  const fetchInteractions = async () => {
-    try {
-      const response = await interactionsAPI.getAll(id);
-      setInteractions(response.data);
-    } catch (error) {
-      console.error('Error fetching interactions:', error);
-    }
-  };
+  }, [contact]);
 
   const handleAddNote = async (e) => {
     e.preventDefault();
-    setAddingNote(true);
-    
-    // Optimistic update
-    const tempNote = {
-      id: `temp-${Date.now()}`,
+
+    const noteData = {
       content: noteContent,
       is_private: notePrivate,
-      user: user,
-      created_at: new Date().toISOString(),
     };
-    
-    setNotes(prev => [tempNote, ...prev]);
-    const previousContent = noteContent;
-    setNoteContent('');
-    setNotePrivate(true);
-    
-    try {
-      const response = await notesAPI.create(id, {
-        content: previousContent,
-        is_private: tempNote.is_private,
-      });
-      success(response.data.message || 'Note added successfully!');
-      
-      // Replace temp note with real note
-      setNotes(prev => prev.map(n => 
-        n.id === tempNote.id ? response.data.note || response.data : n
-      ));
-    } catch (error) {
-      console.error('Error adding note:', error);
-      showError('Failed to add note. Please try again.');
-      // Rollback on error
-      setNotes(prev => prev.filter(n => n.id !== tempNote.id));
-      setNoteContent(previousContent);
-    } finally {
-      setAddingNote(false);
-    }
+
+    createNoteMutation.mutate(noteData, {
+      onSuccess: () => {
+        setNoteContent('');
+        setNotePrivate(true);
+      },
+    });
   };
 
   const handleDeleteNote = async (noteId) => {
     const confirmed = await confirm({
       title: 'Delete Note',
-      message: 'Are you sure you want to delete this note? This action cannot be undone.',
+      message:
+        'Are you sure you want to delete this note? This action cannot be undone.',
       confirmText: 'Delete',
       cancelText: 'Cancel',
       variant: 'danger',
@@ -145,76 +97,37 @@ function ContactProfile() {
 
     if (!confirmed) return;
 
-    try {
-      const response = await notesAPI.delete(id, noteId);
-      success(response.data.message || 'Note deleted successfully!');
-      setNotes(notes.filter(note => note.id !== noteId));
-      await fetchNotes();
-    } catch (error) {
-      console.error('Error deleting note:', error);
-      showError('Failed to delete note. Please try again.');
-    }
+    deleteNoteMutation.mutate(noteId);
   };
 
   const handleAddInteraction = async (e) => {
     e.preventDefault();
-    setAddingInteraction(true);
-    
-    // Optimistic update
-    const tempInteraction = {
-      id: `temp-${Date.now()}`,
+
+    const interactionData = {
       type: interactionType,
       subject: interactionSubject,
       description: interactionDescription,
       interaction_date: interactionDate,
-      duration_minutes: interactionDuration ? parseInt(interactionDuration) : null,
-      user: user,
-      created_at: new Date().toISOString(),
+      duration_minutes: interactionDuration
+        ? parseInt(interactionDuration)
+        : null,
     };
-    
-    setInteractions(prev => [tempInteraction, ...prev]);
-    const previousData = {
-      subject: interactionSubject,
-      description: interactionDescription,
-      duration: interactionDuration,
-    };
-    
-    setInteractionSubject('');
-    setInteractionDescription('');
-    setInteractionDuration('');
-    setInteractionDate(new Date().toISOString().slice(0, 16));
-    
-    try {
-      const response = await interactionsAPI.create(id, {
-        type: interactionType,
-        subject: previousData.subject,
-        description: previousData.description,
-        interaction_date: tempInteraction.interaction_date,
-        duration_minutes: tempInteraction.duration_minutes,
-      });
-      success(response.data.message || 'Interaction logged successfully!');
-      
-      // Replace temp interaction with real one
-      setInteractions(prev => prev.map(i => 
-        i.id === tempInteraction.id ? response.data.interaction || response.data : i
-      ));
-    } catch (error) {
-      console.error('Error adding interaction:', error);
-      showError('Failed to add interaction. Please try again.');
-      // Rollback on error
-      setInteractions(prev => prev.filter(i => i.id !== tempInteraction.id));
-      setInteractionSubject(previousData.subject);
-      setInteractionDescription(previousData.description);
-      setInteractionDuration(previousData.duration);
-    } finally {
-      setAddingInteraction(false);
-    }
+
+    createInteractionMutation.mutate(interactionData, {
+      onSuccess: () => {
+        setInteractionSubject('');
+        setInteractionDescription('');
+        setInteractionDuration('');
+        setInteractionDate(new Date().toISOString().slice(0, 16));
+      },
+    });
   };
 
   const handleDeleteInteraction = async (interactionId) => {
     const confirmed = await confirm({
       title: 'Delete Interaction',
-      message: 'Are you sure you want to delete this interaction? This action cannot be undone.',
+      message:
+        'Are you sure you want to delete this interaction? This action cannot be undone.',
       confirmText: 'Delete',
       cancelText: 'Cancel',
       variant: 'danger',
@@ -222,49 +135,12 @@ function ContactProfile() {
 
     if (!confirmed) return;
 
-    // Store for potential rollback
-    const interaction = interactions.find(i => i.id === interactionId);
-    
-    // Optimistic update
-    setInteractions(prev => prev.filter(i => i.id !== interactionId));
-
-    try {
-      const response = await interactionsAPI.delete(id, interactionId);
-      success(response.data.message || 'Interaction deleted successfully!');
-    } catch (error) {
-      console.error('Error deleting interaction:', error);
-      showError('Failed to delete interaction. Please try again.');
-      // Rollback on error
-      if (interaction) {
-        setInteractions(prev => [...prev, interaction].sort((a, b) => 
-          new Date(b.interaction_date) - new Date(a.interaction_date)
-        ));
-      }
-    }
+    deleteInteractionMutation.mutate(interactionId);
   };
 
   const handleAttachTag = async (tagId) => {
-    const tag = tags.find(t => t.id === tagId);
-    if (!tag) return;
-    
-    // Optimistic update
-    setContact(prev => ({
-      ...prev,
-      tags: [...(prev.tags || []), tag]
-    }));
-    
-    try {
-      const response = await contactsAPI.attachTag(id, tagId);
-      success(response.data.message || 'Tag attached successfully!');
-    } catch (error) {
-      console.error('Error attaching tag:', error);
-      showError('Failed to attach tag. Please try again.');
-      // Rollback on error
-      setContact(prev => ({
-        ...prev,
-        tags: prev.tags.filter(t => t.id !== tagId)
-      }));
-    }
+    if (!tagId) return;
+    attachTagMutation.mutate(tagId);
   };
 
   const handleDetachTag = async (tagId) => {
@@ -278,45 +154,17 @@ function ContactProfile() {
 
     if (!confirmed) return;
 
-    // Store tag for potential rollback
-    const tag = contact.tags?.find(t => t.id === tagId);
-    
-    // Optimistic update
-    setContact(prev => ({
-      ...prev,
-      tags: prev.tags.filter(t => t.id !== tagId)
-    }));
-
-    try {
-      const response = await contactsAPI.detachTag(id, tagId);
-      success(response.data.message || 'Tag removed successfully!');
-    } catch (error) {
-      console.error('Error detaching tag:', error);
-      showError('Failed to remove tag. Please try again.');
-      // Rollback on error
-      if (tag) {
-        setContact(prev => ({
-          ...prev,
-          tags: [...(prev.tags || []), tag]
-        }));
-      }
-    }
+    detachTagMutation.mutate(tagId);
   };
 
   const handleUpdateContact = async (e) => {
     e.preventDefault();
-    setUpdatingContact(true);
-    try {
-      const response = await contactsAPI.update(id, editForm);
-      success(response.data.message || 'Contact updated successfully!');
-      setIsEditing(false);
-      fetchContact();
-    } catch (error) {
-      console.error('Error updating contact:', error);
-      showError('Failed to update contact. Please try again.');
-    } finally {
-      setUpdatingContact(false);
-    }
+
+    updateContactMutation.mutate(editForm, {
+      onSuccess: () => {
+        setIsEditing(false);
+      },
+    });
   };
 
   if (loading) {
@@ -338,7 +186,10 @@ function ContactProfile() {
   return (
     <div>
       <div className="mb-6">
-        <Link to="/contacts" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium">
+        <Link
+          to="/contacts"
+          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+        >
           &larr; Back to Contacts
         </Link>
       </div>
@@ -346,12 +197,19 @@ function ContactProfile() {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{contact.full_name}</h1>
-            <p className="text-gray-600 dark:text-gray-400">{contact.position} at {contact.company}</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              {contact.full_name}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              {contact.position} at {contact.company}
+            </p>
           </div>
           {isAdmin() && !isEditing && (
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={() => {
+                setIsEditing(true);
+                setEditForm(contact);
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition min-h-[44px] min-w-[44px] touch-manipulation"
               aria-label="Edit contact details"
             >
@@ -361,70 +219,102 @@ function ContactProfile() {
         </div>
 
         {isEditing ? (
-          <form onSubmit={handleUpdateContact} className="space-y-4" aria-label="Edit contact form">
+          <form
+            onSubmit={handleUpdateContact}
+            className="space-y-4"
+            aria-label="Edit contact form"
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  First Name
+                </label>
                 <input
                   type="text"
                   value={editForm.first_name || ''}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, first_name: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last Name</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Last Name
+                </label>
                 <input
                   type="text"
                   value={editForm.last_name || ''}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, last_name: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Email
+                </label>
                 <input
                   type="email"
                   value={editForm.email || ''}
-                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, email: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Phone
+                </label>
                 <input
                   type="text"
                   value={editForm.phone || ''}
-                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, phone: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Company
+                </label>
                 <input
                   type="text"
                   value={editForm.company || ''}
-                  onChange={(e) => setEditForm({ ...editForm, company: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, company: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Position
+                </label>
                 <input
                   type="text"
                   value={editForm.position || ''}
-                  onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, position: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Status
+                </label>
                 <select
                   value={editForm.status || 'lead'}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, status: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                   <option value="lead">Lead</option>
@@ -437,10 +327,10 @@ function ContactProfile() {
             <div className="flex gap-4">
               <button
                 type="submit"
-                disabled={updatingContact}
+                disabled={updateContactMutation.isLoading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
               >
-                {updatingContact ? 'Saving...' : 'Save Changes'}
+                {updateContactMutation.isLoading ? 'Saving...' : 'Save Changes'}
               </button>
               <button
                 type="button"
@@ -448,7 +338,7 @@ function ContactProfile() {
                   setIsEditing(false);
                   setEditForm(contact);
                 }}
-                disabled={updatingContact}
+                disabled={updateContactMutation.isLoading}
                 className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
               >
                 Cancel
@@ -458,7 +348,9 @@ function ContactProfile() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Contact Information</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                Contact Information
+              </h3>
               <div className="space-y-2">
                 <p className="text-gray-900 dark:text-gray-100">
                   <span className="font-medium">Email:</span> {contact.email}
@@ -477,7 +369,9 @@ function ContactProfile() {
 
             {contact.address && (
               <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Address</h3>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                  Address
+                </h3>
                 <div className="text-gray-900 dark:text-gray-100">
                   <p>{contact.address}</p>
                   <p>
@@ -491,7 +385,9 @@ function ContactProfile() {
         )}
 
         <div className="mt-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Tags</h3>
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
+            Tags
+          </h3>
           <div className="flex flex-wrap gap-2">
             {contact.tags?.map((tag) => (
               <span
@@ -506,7 +402,8 @@ function ContactProfile() {
                 {isAdmin() && (
                   <button
                     onClick={() => handleDetachTag(tag.id)}
-                    className="hover:opacity-70 min-h-[24px] min-w-[24px] touch-manipulation"
+                    disabled={detachTagMutation.isLoading}
+                    className="hover:opacity-70 min-h-[24px] min-w-[24px] touch-manipulation disabled:opacity-50"
                     aria-label={`Remove ${tag.name} tag`}
                   >
                     ×
@@ -522,7 +419,8 @@ function ContactProfile() {
                     e.target.value = '';
                   }
                 }}
-                className="px-3 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-full text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[44px] touch-manipulation"
+                disabled={attachTagMutation.isLoading}
+                className="px-3 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-full text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[44px] touch-manipulation disabled:opacity-50"
                 aria-label="Add tag to contact"
               >
                 <option value="">+ Add Tag</option>
@@ -539,7 +437,11 @@ function ContactProfile() {
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex" role="tablist" aria-label="Contact profile sections">
+          <nav
+            className="flex"
+            role="tablist"
+            aria-label="Contact profile sections"
+          >
             <button
               onClick={() => setActiveTab('overview')}
               role="tab"
@@ -587,37 +489,62 @@ function ContactProfile() {
 
         <div className="p-6">
           {activeTab === 'overview' && (
-            <div className="space-y-6" role="tabpanel" id="overview-panel" aria-labelledby="overview-tab">
+            <div
+              className="space-y-6"
+              role="tabpanel"
+              id="overview-panel"
+              aria-labelledby="overview-tab"
+            >
               <div>
-                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Recent Activity</h3>
+                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">
+                  Recent Activity
+                </h3>
                 {interactions.slice(0, 3).length > 0 ? (
                   <div className="space-y-3">
                     {interactions.slice(0, 3).map((interaction) => (
-                      <div key={interaction.id} className="border-l-4 border-blue-500 dark:border-blue-400 pl-4 py-2">
+                      <div
+                        key={interaction.id}
+                        className="border-l-4 border-blue-500 dark:border-blue-400 pl-4 py-2"
+                      >
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-medium text-gray-900 dark:text-gray-100">{interaction.subject}</p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{interaction.type}</p>
+                            <p className="font-medium text-gray-900 dark:text-gray-100">
+                              {interaction.subject}
+                            </p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              {interaction.type}
+                            </p>
                           </div>
                           <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {new Date(interaction.interaction_date).toLocaleDateString()}
+                            {new Date(
+                              interaction.interaction_date
+                            ).toLocaleDateString()}
                           </span>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 dark:text-gray-400">No recent activity</p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No recent activity
+                  </p>
                 )}
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Recent Notes</h3>
+                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">
+                  Recent Notes
+                </h3>
                 {notes.slice(0, 3).length > 0 ? (
                   <div className="space-y-3">
                     {notes.slice(0, 3).map((note) => (
-                      <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                        <p className="text-gray-900 dark:text-gray-100">{note.content}</p>
+                      <div
+                        key={note.id}
+                        className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
+                      >
+                        <p className="text-gray-900 dark:text-gray-100">
+                          {note.content}
+                        </p>
                         <div className="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                           <span>{note.user.name}</span>
                           {note.is_private && (
@@ -630,16 +557,29 @@ function ContactProfile() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 dark:text-gray-400">No notes yet</p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No notes yet
+                  </p>
                 )}
               </div>
             </div>
           )}
 
           {activeTab === 'notes' && (
-            <div className="space-y-6" role="tabpanel" id="notes-panel" aria-labelledby="notes-tab">
-              <form onSubmit={handleAddNote} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4" aria-label="Add note form">
-                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Add Note</h3>
+            <div
+              className="space-y-6"
+              role="tabpanel"
+              id="notes-panel"
+              aria-labelledby="notes-tab"
+            >
+              <form
+                onSubmit={handleAddNote}
+                className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
+                aria-label="Add note form"
+              >
+                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">
+                  Add Note
+                </h3>
                 <textarea
                   value={noteContent}
                   onChange={(e) => setNoteContent(e.target.value)}
@@ -656,14 +596,17 @@ function ContactProfile() {
                       onChange={(e) => setNotePrivate(e.target.checked)}
                       className="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Private note (only visible to you{isAdmin() ? ' and admins' : ''})</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Private note (only visible to you
+                      {isAdmin() ? ' and admins' : ''})
+                    </span>
                   </label>
                   <button
                     type="submit"
-                    disabled={addingNote}
+                    disabled={createNoteMutation.isLoading}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
                   >
-                    {addingNote ? 'Adding...' : 'Add Note'}
+                    {createNoteMutation.isLoading ? 'Adding...' : 'Add Note'}
                   </button>
                 </div>
               </form>
@@ -673,10 +616,15 @@ function ContactProfile() {
               ) : (
                 <div className="space-y-3">
                   {notes.map((note) => (
-                    <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                    <div
+                      key={note.id}
+                      className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
+                    >
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900 dark:text-gray-100">{note.user.name}</span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {note.user.name}
+                          </span>
                           {note.is_private && (
                             <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded text-xs">
                               Private
@@ -686,14 +634,17 @@ function ContactProfile() {
                         {(note.user_id === user.id || isAdmin()) && (
                           <button
                             onClick={() => handleDeleteNote(note.id)}
-                            className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 min-h-[44px] min-w-[44px] touch-manipulation"
+                            disabled={deleteNoteMutation.isLoading}
+                            className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 min-h-[44px] min-w-[44px] touch-manipulation disabled:opacity-50"
                             aria-label="Delete note"
                           >
                             Delete
                           </button>
                         )}
                       </div>
-                      <p className="text-gray-900 dark:text-gray-100">{note.content}</p>
+                      <p className="text-gray-900 dark:text-gray-100">
+                        {note.content}
+                      </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         {new Date(note.created_at).toLocaleString()}
                       </p>
@@ -705,12 +656,25 @@ function ContactProfile() {
           )}
 
           {activeTab === 'interactions' && (
-            <div className="space-y-6" role="tabpanel" id="interactions-panel" aria-labelledby="interactions-tab">
-              <form onSubmit={handleAddInteraction} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4" aria-label="Log interaction form">
-                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">Log Interaction</h3>
+            <div
+              className="space-y-6"
+              role="tabpanel"
+              id="interactions-panel"
+              aria-labelledby="interactions-tab"
+            >
+              <form
+                onSubmit={handleAddInteraction}
+                className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
+                aria-label="Log interaction form"
+              >
+                <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">
+                  Log Interaction
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Type</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Type
+                    </label>
                     <select
                       value={interactionType}
                       onChange={(e) => setInteractionType(e.target.value)}
@@ -724,7 +688,9 @@ function ContactProfile() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date & Time</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Date & Time
+                    </label>
                     <input
                       type="datetime-local"
                       value={interactionDate}
@@ -734,7 +700,9 @@ function ContactProfile() {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subject</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Subject
+                    </label>
                     <input
                       type="text"
                       value={interactionSubject}
@@ -745,17 +713,23 @@ function ContactProfile() {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Description
+                    </label>
                     <textarea
                       value={interactionDescription}
-                      onChange={(e) => setInteractionDescription(e.target.value)}
+                      onChange={(e) =>
+                        setInteractionDescription(e.target.value)
+                      }
                       placeholder="Detailed description (optional)"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       rows="3"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration (minutes)</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Duration (minutes)
+                    </label>
                     <input
                       type="number"
                       value={interactionDuration}
@@ -768,10 +742,12 @@ function ContactProfile() {
                 <div className="mt-4 flex justify-end">
                   <button
                     type="submit"
-                    disabled={addingInteraction}
+                    disabled={createInteractionMutation.isLoading}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
                   >
-                    {addingInteraction ? 'Logging...' : 'Log Interaction'}
+                    {createInteractionMutation.isLoading
+                      ? 'Logging...'
+                      : 'Log Interaction'}
                   </button>
                 </div>
               </form>
@@ -780,7 +756,9 @@ function ContactProfile() {
                 <EmptyInteractions />
               ) : (
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold dark:text-gray-100">Timeline</h3>
+                  <h3 className="text-lg font-semibold dark:text-gray-100">
+                    Timeline
+                  </h3>
                   {interactions.map((interaction, index) => (
                     <div key={interaction.id} className="relative">
                       {index !== interactions.length - 1 && (
@@ -795,17 +773,27 @@ function ContactProfile() {
                         <div className="flex-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{interaction.subject}</h4>
-                              <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">{interaction.type}</p>
+                              <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                                {interaction.subject}
+                              </h4>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                                {interaction.type}
+                              </p>
                             </div>
                             <div className="text-right">
                               <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {new Date(interaction.interaction_date).toLocaleString()}
+                                {new Date(
+                                  interaction.interaction_date
+                                ).toLocaleString()}
                               </p>
-                              {(interaction.user_id === user.id || isAdmin()) && (
+                              {(interaction.user_id === user.id ||
+                                isAdmin()) && (
                                 <button
-                                  onClick={() => handleDeleteInteraction(interaction.id)}
-                                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 mt-1 min-h-[44px] min-w-[44px] touch-manipulation"
+                                  onClick={() =>
+                                    handleDeleteInteraction(interaction.id)
+                                  }
+                                  disabled={deleteInteractionMutation.isLoading}
+                                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 mt-1 min-h-[44px] min-w-[44px] touch-manipulation disabled:opacity-50"
                                   aria-label="Delete interaction"
                                 >
                                   Delete
@@ -814,12 +802,16 @@ function ContactProfile() {
                             </div>
                           </div>
                           {interaction.description && (
-                            <p className="text-gray-700 dark:text-gray-300 mb-2">{interaction.description}</p>
+                            <p className="text-gray-700 dark:text-gray-300 mb-2">
+                              {interaction.description}
+                            </p>
                           )}
                           <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                             <span>By {interaction.user.name}</span>
                             {interaction.duration_minutes && (
-                              <span>{interaction.duration_minutes} minutes</span>
+                              <span>
+                                {interaction.duration_minutes} minutes
+                              </span>
                             )}
                           </div>
                         </div>

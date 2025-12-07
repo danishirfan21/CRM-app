@@ -23,7 +23,8 @@ class Interaction extends Model
         'interaction_date' => 'datetime',
     ];
 
-    protected $with = ['user'];
+    // Removed eager loading - load 'user' only when needed
+    // protected $with = ['user'];
 
     public function contact()
     {

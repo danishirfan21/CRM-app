@@ -13,7 +13,7 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255|min:2',
-            'email' => 'required|string|email:rfc,dns|max:255|unique:users',
+            'email' => 'required|string|email:rfc|max:255|unique:users', // Removed dns validation
             'password' => 'required|string|min:8|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/',
         ], [
             'name.required' => 'Name is required.',
@@ -62,6 +62,9 @@ class AuthController extends Controller
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
+
+        // Delete old tokens for this user to keep token table clean
+        $user->tokens()->delete();
 
         $token = $user->createToken('auth_token')->plainTextToken;
 

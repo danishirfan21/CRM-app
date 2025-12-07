@@ -49,6 +49,8 @@ class Contact extends Model
     public function scopeSearch($query, $search)
     {
         if ($search) {
+            // Escape SQL wildcards to prevent unexpected behavior
+            $search = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $search);
             return $query->where(function ($q) use ($search) {
                 $q->where('first_name', 'like', "%{$search}%")
                     ->orWhere('last_name', 'like', "%{$search}%")
@@ -62,7 +64,7 @@ class Contact extends Model
 
     public function scopeByTags($query, $tagIds)
     {
-        if ($tagIds && count($tagIds) > 0) {
+        if ($tagIds && is_array($tagIds) && count($tagIds) > 0) {
             return $query->whereHas('tags', function ($q) use ($tagIds) {
                 $q->whereIn('tags.id', $tagIds);
             });
@@ -72,7 +74,8 @@ class Contact extends Model
 
     public function scopeByStatus($query, $status)
     {
-        if ($status) {
+        // Validate status before using it in query
+        if ($status && in_array($status, ['active', 'inactive', 'lead', 'customer'])) {
             return $query->where('status', $status);
         }
         return $query;

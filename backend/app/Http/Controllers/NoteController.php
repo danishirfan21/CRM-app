@@ -3,14 +3,22 @@
 namespace App\Http\Controllers;
 
 use App\Models\Note;
+use App\Models\Contact;
 use Illuminate\Http\Request;
 
 class NoteController extends Controller
 {
     public function index(Request $request, $contactId)
     {
+        // Verify contact exists
+        $contact = Contact::findOrFail($contactId);
+        
+        // Optional: Add authorization check
+        // $this->authorize('view', $contact);
+
         $notes = Note::where('contact_id', $contactId)
             ->visible($request->user())
+            ->with('user:id,name,email') // Load user relationship here
             ->latest()
             ->get();
 
@@ -19,6 +27,12 @@ class NoteController extends Controller
 
     public function store(Request $request, $contactId)
     {
+        // Verify contact exists
+        $contact = Contact::findOrFail($contactId);
+        
+        // Optional: Add authorization check
+        // $this->authorize('update', $contact);
+
         $validated = $request->validate([
             'content' => 'required|string|max:5000',
             'is_private' => 'boolean',
@@ -34,7 +48,7 @@ class NoteController extends Controller
             'is_private' => $validated['is_private'] ?? true,
         ]);
 
-        $note->load('user');
+        $note->load('user:id,name,email');
         return response()->json([
             'note' => $note,
             'message' => 'Note added successfully!',
@@ -43,6 +57,9 @@ class NoteController extends Controller
 
     public function update(Request $request, $contactId, $id)
     {
+        // Verify contact exists
+        Contact::findOrFail($contactId);
+        
         $note = Note::where('contact_id', $contactId)->findOrFail($id);
 
         if ($note->user_id !== $request->user()->id && !$request->user()->isAdmin()) {
@@ -57,7 +74,7 @@ class NoteController extends Controller
         ]);
 
         $note->update($validated);
-        $note->load('user');
+        $note->load('user:id,name,email');
 
         return response()->json([
             'note' => $note,
@@ -67,6 +84,9 @@ class NoteController extends Controller
 
     public function destroy(Request $request, $contactId, $id)
     {
+        // Verify contact exists
+        Contact::findOrFail($contactId);
+        
         $note = Note::where('contact_id', $contactId)->findOrFail($id);
 
         if ($note->user_id !== $request->user()->id && !$request->user()->isAdmin()) {

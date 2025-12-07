@@ -9,7 +9,18 @@ class ContactController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Contact::with(['tags', 'notes', 'interactions']);
+        // Validate all query parameters
+        $validated = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'tags' => 'nullable|array',
+            'tags.*' => 'integer|exists:tags,id',
+            'status' => 'nullable|in:active,inactive,lead,customer',
+            'sort' => 'nullable|in:first_name,last_name,email,company,created_at',
+            'direction' => 'nullable|in:asc,desc',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $query = Contact::with(['tags']);
 
         if ($request->has('search')) {
             $query->search($request->search);
@@ -26,15 +37,12 @@ class ContactController extends Controller
         if ($request->has('sort')) {
             $sortField = $request->sort;
             $sortDirection = $request->get('direction', 'asc');
-
-            if (in_array($sortField, ['first_name', 'last_name', 'email', 'company', 'created_at'])) {
-                $query->orderBy($sortField, $sortDirection);
-            }
+            $query->orderBy($sortField, $sortDirection);
         } else {
             $query->latest();
         }
 
-        $perPage = $request->get('per_page', 15);
+        $perPage = min($request->get('per_page', 15), 100);
         $contacts = $query->paginate($perPage);
 
         return response()->json($contacts);
@@ -49,8 +57,8 @@ class ContactController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255|min:2',
             'last_name' => 'required|string|max:255|min:2',
-            'email' => 'required|email:rfc,dns|unique:contacts,email',
-            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)]+$/',
+            'email' => 'required|email:rfc|unique:contacts,email',
+            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)\+]+$/',
             'company' => 'nullable|string|max:255',
             'position' => 'nullable|string|max:255',
             'address' => 'nullable|string|max:500',
@@ -71,7 +79,7 @@ class ContactController extends Controller
         ]);
 
         $contact = Contact::create($validated);
-        $contact->load(['tags', 'notes', 'interactions']);
+        $contact->load(['tags']);
 
         return response()->json([
             'contact' => $contact,
@@ -81,7 +89,21 @@ class ContactController extends Controller
 
     public function show($id)
     {
-        $contact = Contact::with(['tags', 'notes.user', 'interactions.user'])->findOrFail($id);
+        // Load only necessary relationships with limited data
+        $contact = Contact::with([
+            'tags',
+            'notes' => function ($query) {
+                $query->with('user:id,name')
+                    ->latest()
+                    ->limit(50); // Limit to recent notes
+            },
+            'interactions' => function ($query) {
+                $query->with('user:id,name')
+                    ->latest('interaction_date')
+                    ->limit(50); // Limit to recent interactions
+            }
+        ])->findOrFail($id);
+        
         return response()->json($contact);
     }
 
@@ -96,8 +118,8 @@ class ContactController extends Controller
         $validated = $request->validate([
             'first_name' => 'sometimes|required|string|max:255|min:2',
             'last_name' => 'sometimes|required|string|max:255|min:2',
-            'email' => 'sometimes|required|email:rfc,dns|unique:contacts,email,' . $id,
-            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)]+$/',
+            'email' => 'sometimes|required|email:rfc|unique:contacts,email,' . $id,
+            'phone' => 'nullable|string|max:20|regex:/^[\d\s\-\(\)\+]+$/',
             'company' => 'nullable|string|max:255',
             'position' => 'nullable|string|max:255',
             'address' => 'nullable|string|max:500',
@@ -115,7 +137,7 @@ class ContactController extends Controller
         ]);
 
         $contact->update($validated);
-        $contact->load(['tags', 'notes', 'interactions']);
+        $contact->load(['tags']);
 
         return response()->json([
             'contact' => $contact,
@@ -147,9 +169,8 @@ class ContactController extends Controller
             'tag_id' => 'required|exists:tags,id',
         ]);
 
-        if (!$contact->tags()->where('tag_id', $validated['tag_id'])->exists()) {
-            $contact->tags()->attach($validated['tag_id']);
-        }
+        // Use syncWithoutDetaching to avoid duplicate check and extra query
+        $contact->tags()->syncWithoutDetaching([$validated['tag_id']]);
 
         $contact->load('tags');
         return response()->json([

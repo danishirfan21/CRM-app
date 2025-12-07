@@ -5,19 +5,22 @@ namespace App\Http\Controllers;
 use App\Models\Interaction;
 use App\Models\Contact;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class InteractionController extends Controller
 {
+    use AuthorizesRequests;
+
     public function index($contactId)
     {
         // Verify contact exists
         $contact = Contact::findOrFail($contactId);
         
-        // Optional: Add authorization check
+        // Check if user can view this contact (optional - uncomment if needed)
         // $this->authorize('view', $contact);
 
         $interactions = Interaction::where('contact_id', $contactId)
-            ->with('user:id,name,email') // Load user relationship here
+            ->with('user:id,name,email') // Load user relationship here (not in model)
             ->latest('interaction_date')
             ->get();
 
@@ -29,8 +32,8 @@ class InteractionController extends Controller
         // Verify contact exists
         $contact = Contact::findOrFail($contactId);
         
-        // Optional: Add authorization check
-        // $this->authorize('update', $contact);
+        // Check if user can create interactions for this contact (uses policy)
+        $this->authorize('create', [Interaction::class, $contact]);
 
         $validated = $request->validate([
             'type' => 'required|in:call,email,meeting,note,other',
@@ -67,9 +70,8 @@ class InteractionController extends Controller
         
         $interaction = Interaction::where('contact_id', $contactId)->findOrFail($id);
 
-        if ($interaction->user_id !== $request->user()->id && !$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Check if user can update this interaction (uses policy)
+        $this->authorize('update', $interaction);
 
         $validated = $request->validate([
             'type' => 'sometimes|required|in:call,email,meeting,note,other',
@@ -100,9 +102,8 @@ class InteractionController extends Controller
         
         $interaction = Interaction::where('contact_id', $contactId)->findOrFail($id);
 
-        if ($interaction->user_id !== $request->user()->id && !$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Check if user can delete this interaction (uses policy)
+        $this->authorize('delete', $interaction);
 
         $interaction->delete();
         return response()->json(['message' => 'Interaction deleted successfully']);

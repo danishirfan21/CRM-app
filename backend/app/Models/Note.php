@@ -20,7 +20,9 @@ class Note extends Model
         'is_private' => 'boolean',
     ];
 
-    protected $with = ['user'];
+    // FIXED: Removed eager loading - load 'user' only when needed
+    // This prevents N+1 queries and unnecessary memory usage
+    // Controllers will explicitly load the user relationship when required
 
     public function contact()
     {
@@ -32,6 +34,13 @@ class Note extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Scope to filter notes based on visibility permissions
+     * 
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param \App\Models\User $user
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeVisible($query, $user)
     {
         if ($user->isAdmin()) {

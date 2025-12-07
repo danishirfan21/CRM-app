@@ -4,11 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class ContactController extends Controller
 {
+    use AuthorizesRequests;
+
     public function index(Request $request)
     {
+        // Check if user can view contacts
+        $this->authorize('viewAny', Contact::class);
+
         // Validate all query parameters
         $validated = $request->validate([
             'search' => 'nullable|string|max:255',
@@ -50,9 +56,8 @@ class ContactController extends Controller
 
     public function store(Request $request)
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Check if user can create contacts (uses policy)
+        $this->authorize('create', Contact::class);
 
         $validated = $request->validate([
             'first_name' => 'required|string|max:255|min:2',
@@ -103,17 +108,19 @@ class ContactController extends Controller
                     ->limit(50); // Limit to recent interactions
             }
         ])->findOrFail($id);
+
+        // Check if user can view this contact
+        $this->authorize('view', $contact);
         
         return response()->json($contact);
     }
 
     public function update(Request $request, $id)
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $contact = Contact::findOrFail($id);
+
+        // Check if user can update this contact (uses policy)
+        $this->authorize('update', $contact);
 
         $validated = $request->validate([
             'first_name' => 'sometimes|required|string|max:255|min:2',
@@ -147,11 +154,11 @@ class ContactController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $contact = Contact::findOrFail($id);
+
+        // Check if user can delete this contact (uses policy)
+        $this->authorize('delete', $contact);
+
         $contact->delete();
 
         return response()->json(['message' => 'Contact deleted successfully']);
@@ -159,11 +166,10 @@ class ContactController extends Controller
 
     public function attachTag(Request $request, $id)
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $contact = Contact::findOrFail($id);
+
+        // Check if user can manage tags for this contact (uses policy)
+        $this->authorize('manageTags', $contact);
 
         $validated = $request->validate([
             'tag_id' => 'required|exists:tags,id',
@@ -181,11 +187,11 @@ class ContactController extends Controller
 
     public function detachTag(Request $request, $id, $tagId)
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $contact = Contact::findOrFail($id);
+
+        // Check if user can manage tags for this contact (uses policy)
+        $this->authorize('manageTags', $contact);
+
         $contact->tags()->detach($tagId);
         $contact->load('tags');
 

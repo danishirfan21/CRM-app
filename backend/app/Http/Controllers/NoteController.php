@@ -5,20 +5,24 @@ namespace App\Http\Controllers;
 use App\Models\Note;
 use App\Models\Contact;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class NoteController extends Controller
 {
+    use AuthorizesRequests;
+
     public function index(Request $request, $contactId)
     {
         // Verify contact exists
         $contact = Contact::findOrFail($contactId);
         
-        // Optional: Add authorization check
+        // Check if user can view this contact (optional - uncomment if needed)
         // $this->authorize('view', $contact);
 
+        // Get notes that are visible to the current user
         $notes = Note::where('contact_id', $contactId)
             ->visible($request->user())
-            ->with('user:id,name,email') // Load user relationship here
+            ->with('user:id,name,email') // Load user relationship here (not in model)
             ->latest()
             ->get();
 
@@ -30,8 +34,8 @@ class NoteController extends Controller
         // Verify contact exists
         $contact = Contact::findOrFail($contactId);
         
-        // Optional: Add authorization check
-        // $this->authorize('update', $contact);
+        // Check if user can create notes for this contact (uses policy)
+        $this->authorize('create', [Note::class, $contact]);
 
         $validated = $request->validate([
             'content' => 'required|string|max:5000',
@@ -62,9 +66,8 @@ class NoteController extends Controller
         
         $note = Note::where('contact_id', $contactId)->findOrFail($id);
 
-        if ($note->user_id !== $request->user()->id && !$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Check if user can update this note (uses policy)
+        $this->authorize('update', $note);
 
         $validated = $request->validate([
             'content' => 'sometimes|required|string|max:5000',
@@ -89,9 +92,8 @@ class NoteController extends Controller
         
         $note = Note::where('contact_id', $contactId)->findOrFail($id);
 
-        if ($note->user_id !== $request->user()->id && !$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Check if user can delete this note (uses policy)
+        $this->authorize('delete', $note);
 
         $note->delete();
         return response()->json(['message' => 'Note deleted successfully']);

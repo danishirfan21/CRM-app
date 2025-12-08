@@ -1,13 +1,18 @@
 import axios from 'axios';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://backend-app-production-f429.up.railway.app/api';
+
+console.log('🚀 API Base URL:', API_BASE_URL);
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'Cache-Control': 'no-cache',
     'Pragma': 'no-cache',
   },
+  withCredentials: true,
 });
 
 api.interceptors.request.use(

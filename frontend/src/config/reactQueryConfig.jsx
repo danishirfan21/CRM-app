@@ -1,16 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { TIMING } from '../utils/constants';
 
-// Create a client with default options
+// Create a client with aggressive caching for tags
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: TIMING.STALE_TIME, // 5 minutes
-      cacheTime: TIMING.CACHE_TIME, // 10 minutes
+      staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh for 5 mins
+      gcTime: 30 * 60 * 1000, // 30 minutes - Previously called 'cacheTime' in v4
       retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnMount: true,
+      refetchOnWindowFocus: false, // Don't refetch when window regains focus
+      refetchOnMount: false, // Don't refetch on component mount if data exists
       refetchOnReconnect: true,
       onError: (error) => {
         console.error('Query error:', error);

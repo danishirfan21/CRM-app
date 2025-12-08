@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
   contactsAPI,
   tagsAPI,
@@ -11,10 +12,14 @@ import { useToast } from '../context/ToastContext';
 // ============== CONTACTS ==============
 
 export const useContacts = (params) => {
+  const stableParams = useMemo(() => JSON.stringify(params || {}), [params]);
+
   return useQuery({
-    queryKey: [QUERY_KEYS.CONTACTS, params],
+    queryKey: [QUERY_KEYS.CONTACTS, stableParams],
     queryFn: () => contactsAPI.getAll(params),
     select: (response) => response.data.data || response.data,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };
 
@@ -24,6 +29,8 @@ export const useContact = (id) => {
     queryFn: () => contactsAPI.getOne(id),
     select: (response) => response.data,
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes
   });
 };
 
@@ -77,12 +84,25 @@ export const useDeleteContact = () => {
 };
 
 // ============== TAGS ==============
-
+// CRITICAL FIX 2: Maximum caching for tags - they rarely change
+// This solves the "tags not cached" issue completely
 export const useTags = () => {
   return useQuery({
-    queryKey: [QUERY_KEYS.TAGS],
+    queryKey: [QUERY_KEYS.TAGS], // No params - always the same key
     queryFn: () => tagsAPI.getAll(),
     select: (response) => response.data,
+
+    // AGGRESSIVE CACHING SETTINGS
+    staleTime: Infinity, // Never automatically mark as stale
+    gcTime: 24 * 60 * 60 * 1000, // Keep in memory for 24 hours
+
+    // Prevent ALL automatic refetches
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+
+    // Optional: Keep old data while fetching new (instant UI updates)
+    placeholderData: (previousData) => previousData,
   });
 };
 
@@ -93,6 +113,7 @@ export const useCreateTag = () => {
   return useMutation({
     mutationFn: (data) => tagsAPI.create(data),
     onSuccess: (response) => {
+      // Force refetch tags since a new tag was created
       queryClient.invalidateQueries([QUERY_KEYS.TAGS]);
       success(response.data.message || SUCCESS_MESSAGES.TAG_CREATED);
     },
@@ -109,6 +130,7 @@ export const useUpdateTag = () => {
   return useMutation({
     mutationFn: ({ id, data }) => tagsAPI.update(id, data),
     onSuccess: (response) => {
+      // Force refetch tags since a tag was updated
       queryClient.invalidateQueries([QUERY_KEYS.TAGS]);
       success(response.data.message || SUCCESS_MESSAGES.TAG_UPDATED);
     },
@@ -125,7 +147,9 @@ export const useDeleteTag = () => {
   return useMutation({
     mutationFn: (id) => tagsAPI.delete(id),
     onSuccess: (response) => {
+      // Force refetch tags since a tag was deleted
       queryClient.invalidateQueries([QUERY_KEYS.TAGS]);
+      // Also invalidate contacts since they may have had this tag
       queryClient.invalidateQueries([QUERY_KEYS.CONTACTS]);
       success(response.data.message || SUCCESS_MESSAGES.TAG_DELETED);
     },
@@ -136,49 +160,23 @@ export const useDeleteTag = () => {
 };
 
 // ============== TAG ATTACHMENT ==============
-
+// CRITICAL FIX 3: When attaching/detaching tags, DON'T invalidate tags query
+// The tags themselves haven't changed, only the contact-tag relationship
 export const useAttachTag = (contactId) => {
   const queryClient = useQueryClient();
   const { success, error } = useToast();
 
   return useMutation({
     mutationFn: (tagId) => contactsAPI.attachTag(contactId, tagId),
-    onMutate: async (tagId) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries([QUERY_KEYS.CONTACT, contactId]);
-
-      // Snapshot previous value
-      const previousContact = queryClient.getQueryData([
-        QUERY_KEYS.CONTACT,
-        contactId,
-      ]);
-
-      // Optimistically update
-      queryClient.setQueryData([QUERY_KEYS.CONTACT, contactId], (old) => {
-        const tags = queryClient.getQueryData([QUERY_KEYS.TAGS]);
-        const tag = tags?.find((t) => t.id === tagId);
-
-        return {
-          ...old,
-          tags: [...(old?.tags || []), tag],
-        };
-      });
-
-      return { previousContact };
-    },
     onSuccess: (response) => {
+      // Only invalidate contact data, NOT the tags list
+      queryClient.invalidateQueries([QUERY_KEYS.CONTACT, contactId]);
+      queryClient.invalidateQueries([QUERY_KEYS.CONTACTS]);
+      // ❌ REMOVED: queryClient.invalidateQueries([QUERY_KEYS.TAGS]);
       success(response.data.message || SUCCESS_MESSAGES.TAG_ATTACHED);
     },
-    onError: (err, tagId, context) => {
-      // Rollback on error
-      queryClient.setQueryData(
-        [QUERY_KEYS.CONTACT, contactId],
-        context.previousContact
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to attach tag');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries([QUERY_KEYS.CONTACT, contactId]);
     },
   });
 };
@@ -189,32 +187,15 @@ export const useDetachTag = (contactId) => {
 
   return useMutation({
     mutationFn: (tagId) => contactsAPI.detachTag(contactId, tagId),
-    onMutate: async (tagId) => {
-      await queryClient.cancelQueries([QUERY_KEYS.CONTACT, contactId]);
-      const previousContact = queryClient.getQueryData([
-        QUERY_KEYS.CONTACT,
-        contactId,
-      ]);
-
-      queryClient.setQueryData([QUERY_KEYS.CONTACT, contactId], (old) => ({
-        ...old,
-        tags: old?.tags?.filter((t) => t.id !== tagId) || [],
-      }));
-
-      return { previousContact };
-    },
     onSuccess: (response) => {
+      // Only invalidate contact data, NOT the tags list
+      queryClient.invalidateQueries([QUERY_KEYS.CONTACT, contactId]);
+      queryClient.invalidateQueries([QUERY_KEYS.CONTACTS]);
+      // ❌ REMOVED: queryClient.invalidateQueries([QUERY_KEYS.TAGS]);
       success(response.data.message || SUCCESS_MESSAGES.TAG_DETACHED);
     },
-    onError: (err, tagId, context) => {
-      queryClient.setQueryData(
-        [QUERY_KEYS.CONTACT, contactId],
-        context.previousContact
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to detach tag');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries([QUERY_KEYS.CONTACT, contactId]);
     },
   });
 };
@@ -227,6 +208,8 @@ export const useNotes = (contactId) => {
     queryFn: () => notesAPI.getAll(contactId),
     select: (response) => response.data,
     enabled: !!contactId,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 };
 
@@ -236,43 +219,11 @@ export const useCreateNote = (contactId) => {
 
   return useMutation({
     mutationFn: (data) => notesAPI.create(contactId, data),
-    onMutate: async (newNote) => {
-      await queryClient.cancelQueries([QUERY_KEYS.NOTES, contactId]);
-      const previousNotes = queryClient.getQueryData([
-        QUERY_KEYS.NOTES,
-        contactId,
-      ]);
-
-      const optimisticNote = {
-        id: `temp-${Date.now()}`,
-        content: newNote.content,
-        is_private: newNote.is_private,
-        user: queryClient.getQueryData([QUERY_KEYS.USER]),
-        created_at: new Date().toISOString(),
-      };
-
-      queryClient.setQueryData([QUERY_KEYS.NOTES, contactId], (old) => [
-        optimisticNote,
-        ...(old || []),
-      ]);
-
-      return { previousNotes, optimisticNote };
-    },
-    onSuccess: (response, variables, context) => {
-      queryClient.setQueryData([QUERY_KEYS.NOTES, contactId], (old) =>
-        old.map((note) =>
-          note.id === context.optimisticNote.id
-            ? response.data.note || response.data
-            : note
-        )
-      );
+    onSuccess: (response) => {
+      queryClient.invalidateQueries([QUERY_KEYS.NOTES, contactId]);
       success(response.data.message || SUCCESS_MESSAGES.NOTE_CREATED);
     },
-    onError: (err, newNote, context) => {
-      queryClient.setQueryData(
-        [QUERY_KEYS.NOTES, contactId],
-        context.previousNotes
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to create note');
     },
   });
@@ -284,28 +235,11 @@ export const useDeleteNote = (contactId) => {
 
   return useMutation({
     mutationFn: (noteId) => notesAPI.delete(contactId, noteId),
-    onMutate: async (noteId) => {
-      await queryClient.cancelQueries([QUERY_KEYS.NOTES, contactId]);
-      const previousNotes = queryClient.getQueryData([
-        QUERY_KEYS.NOTES,
-        contactId,
-      ]);
-
-      queryClient.setQueryData(
-        [QUERY_KEYS.NOTES, contactId],
-        (old) => old?.filter((note) => note.id !== noteId) || []
-      );
-
-      return { previousNotes };
-    },
     onSuccess: (response) => {
+      queryClient.invalidateQueries([QUERY_KEYS.NOTES, contactId]);
       success(response.data.message || SUCCESS_MESSAGES.NOTE_DELETED);
     },
-    onError: (err, noteId, context) => {
-      queryClient.setQueryData(
-        [QUERY_KEYS.NOTES, contactId],
-        context.previousNotes
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to delete note');
     },
   });
@@ -319,6 +253,8 @@ export const useInteractions = (contactId) => {
     queryFn: () => interactionsAPI.getAll(contactId),
     select: (response) => response.data,
     enabled: !!contactId,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 };
 
@@ -328,42 +264,11 @@ export const useCreateInteraction = (contactId) => {
 
   return useMutation({
     mutationFn: (data) => interactionsAPI.create(contactId, data),
-    onMutate: async (newInteraction) => {
-      await queryClient.cancelQueries([QUERY_KEYS.INTERACTIONS, contactId]);
-      const previousInteractions = queryClient.getQueryData([
-        QUERY_KEYS.INTERACTIONS,
-        contactId,
-      ]);
-
-      const optimisticInteraction = {
-        id: `temp-${Date.now()}`,
-        ...newInteraction,
-        user: queryClient.getQueryData([QUERY_KEYS.USER]),
-        created_at: new Date().toISOString(),
-      };
-
-      queryClient.setQueryData([QUERY_KEYS.INTERACTIONS, contactId], (old) => [
-        optimisticInteraction,
-        ...(old || []),
-      ]);
-
-      return { previousInteractions, optimisticInteraction };
-    },
-    onSuccess: (response, variables, context) => {
-      queryClient.setQueryData([QUERY_KEYS.INTERACTIONS, contactId], (old) =>
-        old.map((interaction) =>
-          interaction.id === context.optimisticInteraction.id
-            ? response.data.interaction || response.data
-            : interaction
-        )
-      );
+    onSuccess: (response) => {
+      queryClient.invalidateQueries([QUERY_KEYS.INTERACTIONS, contactId]);
       success(response.data.message || SUCCESS_MESSAGES.INTERACTION_CREATED);
     },
-    onError: (err, newInteraction, context) => {
-      queryClient.setQueryData(
-        [QUERY_KEYS.INTERACTIONS, contactId],
-        context.previousInteractions
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to create interaction');
     },
   });
@@ -376,29 +281,11 @@ export const useDeleteInteraction = (contactId) => {
   return useMutation({
     mutationFn: (interactionId) =>
       interactionsAPI.delete(contactId, interactionId),
-    onMutate: async (interactionId) => {
-      await queryClient.cancelQueries([QUERY_KEYS.INTERACTIONS, contactId]);
-      const previousInteractions = queryClient.getQueryData([
-        QUERY_KEYS.INTERACTIONS,
-        contactId,
-      ]);
-
-      queryClient.setQueryData(
-        [QUERY_KEYS.INTERACTIONS, contactId],
-        (old) =>
-          old?.filter((interaction) => interaction.id !== interactionId) || []
-      );
-
-      return { previousInteractions };
-    },
     onSuccess: (response) => {
+      queryClient.invalidateQueries([QUERY_KEYS.INTERACTIONS, contactId]);
       success(response.data.message || SUCCESS_MESSAGES.INTERACTION_DELETED);
     },
-    onError: (err, interactionId, context) => {
-      queryClient.setQueryData(
-        [QUERY_KEYS.INTERACTIONS, contactId],
-        context.previousInteractions
-      );
+    onError: (err) => {
       error(err.response?.data?.message || 'Failed to delete interaction');
     },
   });

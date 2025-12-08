@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -24,7 +24,7 @@ function ContactProfile() {
   const { user, isAdmin } = useAuth();
   const { confirm } = useConfirm();
 
-  // React Query hooks - replaces all manual state management
+  // React Query hooks
   const { data: contact, isLoading: contactLoading } = useContact(id);
   const { data: tags = [], isLoading: tagsLoading } = useTags();
   const { data: notes = [], isLoading: notesLoading } = useNotes(id);
@@ -40,7 +40,7 @@ function ContactProfile() {
   const createInteractionMutation = useCreateInteraction(id);
   const deleteInteractionMutation = useDeleteInteraction(id);
 
-  // Local UI state only
+  // Local UI state
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -62,18 +62,23 @@ function ContactProfile() {
   const loading =
     contactLoading || tagsLoading || notesLoading || interactionsLoading;
 
-  // Initialize edit form when contact data loads
-  useState(() => {
+  // FIX: Initialize edit form when contact data loads
+  useEffect(() => {
     if (contact && !isEditing) {
       setEditForm(contact);
     }
   }, [contact]);
 
+  // FIX 5: Fixed handleAddNote with proper data structure
   const handleAddNote = async (e) => {
     e.preventDefault();
 
+    if (!noteContent.trim()) {
+      return;
+    }
+
     const noteData = {
-      content: noteContent,
+      content: noteContent.trim(),
       is_private: notePrivate,
     };
 
@@ -100,13 +105,18 @@ function ContactProfile() {
     deleteNoteMutation.mutate(noteId);
   };
 
+  // FIX 6: Fixed handleAddInteraction with proper data structure
   const handleAddInteraction = async (e) => {
     e.preventDefault();
 
+    if (!interactionSubject.trim()) {
+      return;
+    }
+
     const interactionData = {
       type: interactionType,
-      subject: interactionSubject,
-      description: interactionDescription,
+      subject: interactionSubject.trim(),
+      description: interactionDescription.trim() || null,
       interaction_date: interactionDate,
       duration_minutes: interactionDuration
         ? parseInt(interactionDuration)
@@ -140,7 +150,10 @@ function ContactProfile() {
 
   const handleAttachTag = async (tagId) => {
     if (!tagId) return;
-    attachTagMutation.mutate(tagId);
+    const parsedTagId = parseInt(tagId);
+    if (isNaN(parsedTagId)) return;
+
+    attachTagMutation.mutate(parsedTagId);
   };
 
   const handleDetachTag = async (tagId) => {
@@ -415,7 +428,7 @@ function ContactProfile() {
               <select
                 onChange={(e) => {
                   if (e.target.value) {
-                    handleAttachTag(parseInt(e.target.value));
+                    handleAttachTag(e.target.value);
                     e.target.value = '';
                   }
                 }}
@@ -423,7 +436,9 @@ function ContactProfile() {
                 className="px-3 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-full text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[44px] touch-manipulation disabled:opacity-50"
                 aria-label="Add tag to contact"
               >
-                <option value="">+ Add Tag</option>
+                <option value="">
+                  {attachTagMutation.isLoading ? 'Adding...' : '+ Add Tag'}
+                </option>
                 {availableTags.map((tag) => (
                   <option key={tag.id} value={tag.id}>
                     {tag.name}
@@ -601,11 +616,32 @@ function ContactProfile() {
                       {isAdmin() ? ' and admins' : ''})
                     </span>
                   </label>
+                  {/* FIX 7: Added disabled state and loading text to Add Note button */}
                   <button
                     type="submit"
-                    disabled={createNoteMutation.isLoading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
+                    disabled={
+                      createNoteMutation.isLoading || !noteContent.trim()
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation flex items-center gap-2"
                   >
+                    {createNoteMutation.isLoading && (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    )}
                     {createNoteMutation.isLoading ? 'Adding...' : 'Add Note'}
                   </button>
                 </div>
@@ -740,11 +776,33 @@ function ContactProfile() {
                   </div>
                 </div>
                 <div className="mt-4 flex justify-end">
+                  {/* FIX 8: Added disabled state and loading text to Log Interaction button */}
                   <button
                     type="submit"
-                    disabled={createInteractionMutation.isLoading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
+                    disabled={
+                      createInteractionMutation.isLoading ||
+                      !interactionSubject.trim()
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation flex items-center gap-2"
                   >
+                    {createInteractionMutation.isLoading && (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    )}
                     {createInteractionMutation.isLoading
                       ? 'Logging...'
                       : 'Log Interaction'}

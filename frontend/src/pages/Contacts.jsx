@@ -20,8 +20,16 @@ function Contacts() {
 
   const debouncedSearch = useDebounce(search, 500);
 
+  // CRITICAL FIX: Create stable params object using useMemo
+  // This prevents unnecessary refetches when component rerenders
+  const queryParams = useMemo(() => ({}), []); // Empty object since we're doing client-side filtering
+
   // Fetch ALL contacts (without filters) for client-side filtering
-  const { data: allContacts = [], isLoading, isRefetching } = useContacts({});
+  const {
+    data: allContacts = [],
+    isLoading,
+    isRefetching,
+  } = useContacts(queryParams);
 
   const { data: tags = [], isLoading: tagsLoading } = useTags();
   const deleteContactMutation = useDeleteContact();
@@ -249,7 +257,7 @@ function Contacts() {
         </div>
       </div>
 
-      {/* Contacts Grid - Improved layout with max 2 columns on xl screens */}
+      {/* Contacts Grid */}
       <div
         className={
           isRefetching && !isLoading ? 'opacity-50 pointer-events-none' : ''
